@@ -29,7 +29,6 @@ from .constants import TXO_TYPES, CLAIM_TYPES, COIN, NULL_HASH32
 from .bip32 import PubKey, PrivateKey
 from .coinselection import CoinSelector
 
-
 log = logging.getLogger(__name__)
 
 LedgerType = Type['BaseLedger']
@@ -905,7 +904,7 @@ class Ledger(metaclass=LedgerRegistry):
         if len(outputs.txs) > 0:
             txs: List[Transaction] = []
             if session_override:
-                 txs.extend((await self.request_transactions_for_inflate(tuple(outputs.txs), session_override)))
+                txs.extend((await self.request_transactions_for_inflate(tuple(outputs.txs), session_override)))
             else:
                 txs.extend((await asyncio.gather(*(self.cache_transaction(*tx) for tx in outputs.txs))))
 
@@ -980,8 +979,6 @@ class Ledger(metaclass=LedgerRegistry):
         return txos, blocked, outputs.offset, outputs.total
 
     async def resolve(self, accounts, urls, new_sdk_server=None, **kwargs):
-        from lbry.wallet.network import ClientSession
-
         session_override = None
         if new_sdk_server:
             resolve = partial(self.network.new_resolve, new_sdk_server)
@@ -1016,7 +1013,6 @@ class Ledger(metaclass=LedgerRegistry):
     async def claim_search(
             self, accounts, include_purchase_receipt=False, include_is_my_output=False,
             new_sdk_server=None, **kwargs) -> Tuple[List[Output], dict, int, int]:
-        from lbry.wallet.network import ClientSession
         session_override = None
         try:
             if new_sdk_server:
