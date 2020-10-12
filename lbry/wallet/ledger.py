@@ -979,25 +979,28 @@ class Ledger(metaclass=LedgerRegistry):
         return txos, blocked, outputs.offset, outputs.total
 
     async def resolve(self, accounts, urls, new_sdk_server=None, **kwargs):
-        session_override = None
-        if new_sdk_server:
-            resolve = partial(self.network.new_resolve, new_sdk_server)
-        else:
-            server = self.network.session_pool.fastest_session.server
-            session_override = ClientSession(network=self.network, server=server)
-            await session_override.create_connection()
-            resolve = partial(self.network.resolve, session_override=session_override)
-        urls_copy = list(urls)
         txos = []
-        while urls_copy:
-            batch, urls_copy = urls_copy[:500], urls_copy[500:]
-            txos.extend(
-                (await self._inflate_outputs(
-                    resolve(batch), accounts, session_override=session_override, **kwargs
-                ))[0]
-            )
-        if session_override:
-            await session_override.close()
+        urls_copy = list(urls)
+
+        if new_sdk_server:
+            resolve = partial(self.network.resolve, new_sdk_server)
+            while urls_copy:
+                batch, urls_copy = urls_copy[:500], urls_copy[500:]
+                txos.extend(
+                    (await self._inflate_outputs(
+                        resolve(batch), accounts, **kwargs
+                    ))[0]
+                )
+        else:
+            async with self.network.single_call_context(self.network.resolve) as (resolve, session):
+                while urls_copy:
+                    batch, urls_copy = urls_copy[:500], urls_copy[500:]
+                    txos.extend(
+                        (await self._inflate_outputs(
+                            resolve(batch), accounts, session_override=session, **kwargs
+                        ))[0]
+                    )
+
         assert len(urls) == len(txos), "Mismatch between urls requested for resolve and responses received."
         result = {}
         for url, txo in zip(urls, txos):
@@ -1013,24 +1016,19 @@ class Ledger(metaclass=LedgerRegistry):
     async def claim_search(
             self, accounts, include_purchase_receipt=False, include_is_my_output=False,
             new_sdk_server=None, **kwargs) -> Tuple[List[Output], dict, int, int]:
-        session_override = None
-        try:
-            if new_sdk_server:
-                claim_search = partial(self.network.new_claim_search, new_sdk_server)
-            else:
-                server = self.network.session_pool.fastest_session.server
-                session_override = ClientSession(network=self.network, server=server)
-                await session_override.create_connection()
-                claim_search = partial(self.network.claim_search, session_override=session_override)
+        if new_sdk_server:
+            claim_search = partial(self.network.new_claim_search, new_sdk_server)
             return await self._inflate_outputs(
                 claim_search(**kwargs), accounts,
                 include_purchase_receipt=include_purchase_receipt,
                 include_is_my_output=include_is_my_output,
-                session_override=session_override
             )
-        finally:
-            if session_override:
-                await session_override.close()
+        async with self.network.single_call_context(self.network.claim_search) as (claim_search, session):
+            return await self._inflate_outputs(
+                claim_search(**kwargs), accounts, session_override=session,
+                include_purchase_receipt=include_purchase_receipt,
+                include_is_my_output=include_is_my_output,
+            )
 
     async def get_claim_by_claim_id(self, accounts, claim_id, **kwargs) -> Output:
         for claim in (await self.claim_search(accounts, claim_id=claim_id, **kwargs))[0]:
